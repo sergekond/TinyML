@@ -1,4 +1,5 @@
 #include "esp_camera.h"
+#include "secrets.h"
 #include <WiFi.h>
 
 // ===========================
@@ -9,8 +10,8 @@
 // ===========================
 // Enter your WiFi credentials
 // ===========================
-const char *ssid = "Set";
-const char *password = "axid2561";
+const char *ssid = WIFI_SSID;
+const char *password = WIFI_PASS;
 
 void startCameraServer();
 void setupLedFlash();

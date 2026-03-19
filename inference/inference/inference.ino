@@ -16,7 +16,7 @@
 #define MODEL_H 96
 
 // ===== Tensor Arena =====
-constexpr int kTensorArenaSize = 120 * 1024;
+constexpr int kTensorArenaSize = 100 * 1024;
 uint8_t *tensor_arena;
 
 // ===== TFLite =====
@@ -34,6 +34,7 @@ int input_zero;
 
 int person_counter = 0;
 
+unsigned long last_inference = 0;
 
 // ================= PREPROCESS =================
 void preprocess(camera_fb_t *fb, int8_t *input_data)
@@ -67,12 +68,46 @@ void preprocess(camera_fb_t *fb, int8_t *input_data)
   }
 }
 
+void inference () {
+  camera_fb_t *fb = esp_camera_fb_get();
+
+  if(!fb)
+  {
+    Serial.println("Camera capture failed");
+    return;
+  }
+
+  preprocess(fb, input_tensor->data.int8);
+
+  if(interpreter->Invoke() != kTfLiteOk)
+  {
+    Serial.println("Invoke failed");
+    esp_camera_fb_return(fb);
+    return;
+  }
+
+  int8_t output = output_tensor->data.int8[0];
+
+  float prob = (output - output_tensor->params.zero_point) *
+               output_tensor->params.scale;
+
+  Serial.print("Person probability: ");
+  Serial.println(prob, 3);
+
+
+  if(prob > 0.5)
+    Serial.println("PERSON DETECTED");
+  else
+    Serial.println("OTHER");
+
+
+  esp_camera_fb_return(fb);
+}
 
 // ================= SETUP =================
 void setup()
 {
   Serial.begin(115200);
-  delay(2000);
 
   Serial.println("Starting TinyML ESP32-CAM");
 
@@ -128,7 +163,11 @@ void setup()
 
 
   // ===== Tensor Arena =====
-  tensor_arena = (uint8_t*) ps_malloc(kTensorArenaSize);
+tensor_arena = (uint8_t*) heap_caps_malloc(kTensorArenaSize, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+if (!tensor_arena) {
+    Serial.println("Failed to allocate internal RAM for tensor arena");
+    return;
+}
 
   if(!tensor_arena)
   {
@@ -190,49 +229,9 @@ resolver.AddMean();
   Serial.println(input_zero);
 }
 
-
-
-// ================= LOOP =================
-void loop()
-{
-  camera_fb_t *fb = esp_camera_fb_get();
-
-  if(!fb)
-  {
-    Serial.println("Camera capture failed");
-    return;
-  }
-
-  Serial.printf("Frame %dx%d\n", fb->width, fb->height);
-
-  preprocess(fb, input_tensor->data.int8);
-
-  Serial.println("Running inference");
-
-  if(interpreter->Invoke() != kTfLiteOk)
-  {
-    Serial.println("Invoke failed");
-    esp_camera_fb_return(fb);
-    return;
-  }
-
-  int8_t output = output_tensor->data.int8[0];
-
-  float prob = (output - output_tensor->params.zero_point) *
-               output_tensor->params.scale;
-
-  Serial.print("Person probability: ");
-  Serial.println(prob, 3);
-
-
-  if(prob > 0.5)
-    Serial.println("PERSON DETECTED");
-  else
-    Serial.println("OTHER");
-
-
-  Serial.println("---------------------");
-
-  esp_camera_fb_return(fb);
-  delay(2000);
+void loop() {
+  if (millis() - last_inference >= 500) {
+    last_inference = millis();
+      inference();
+    }
 }
